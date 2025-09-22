@@ -1,53 +1,58 @@
 import React from 'react';
-import { AlertCircle, CheckCircle, Loader, Wifi } from 'lucide-react';
 
 interface StatusMessageProps {
-  type: 'error' | 'success' | 'loading' | 'info';
-  message: string;
+  message: string | null;
+  type: 'info' | 'success' | 'error' | 'warning';
+  onClose?: () => void;
 }
 
-export const StatusMessage: React.FC<StatusMessageProps> = ({ type, message }) => {
-  const getConfig = () => {
+export const StatusMessage: React.FC<StatusMessageProps> = ({ message, type, onClose }) => {
+  if (!message) return null;
+
+  const getStatusStyles = () => {
     switch (type) {
-      case 'error':
-        return {
-          icon: <AlertCircle size={20} />,
-          className: 'bg-red-50 border-red-200 text-red-700',
-          iconClassName: 'text-red-500',
-        };
       case 'success':
-        return {
-          icon: <CheckCircle size={20} />,
-          className: 'bg-green-50 border-green-200 text-green-700',
-          iconClassName: 'text-green-500',
-        };
-      case 'loading':
-        return {
-          icon: <Loader size={20} className="animate-spin" />,
-          className: 'bg-blue-50 border-blue-200 text-blue-700',
-          iconClassName: 'text-blue-500',
-        };
+        return 'bg-green-100 border-green-400 text-green-700';
+      case 'error':
+        return 'bg-red-100 border-red-400 text-red-700';
+      case 'warning':
+        return 'bg-yellow-100 border-yellow-400 text-yellow-700';
       case 'info':
-        return {
-          icon: <Wifi size={20} />,
-          className: 'bg-gray-50 border-gray-200 text-gray-700',
-          iconClassName: 'text-gray-500',
-        };
+      default:
+        return 'bg-blue-100 border-blue-400 text-blue-700';
     }
   };
 
-  const config = getConfig();
+  const getIcon = () => {
+    switch (type) {
+      case 'success':
+        return '✅';
+      case 'error':
+        return '❌';
+      case 'warning':
+        return '⚠️';
+      case 'info':
+      default:
+        return 'ℹ️';
+    }
+  };
 
   return (
-    <div className={`
-      border rounded-lg p-4 flex items-center space-x-3
-      transition-all duration-300 transform
-      ${config.className}
-    `}>
-      <div className={config.iconClassName}>
-        {config.icon}
+    <div className={`border px-4 py-3 rounded relative ${getStatusStyles()}`} role="alert">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center">
+          <span className="mr-2">{getIcon()}</span>
+          <span className="block sm:inline">{message}</span>
+        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="ml-4 text-lg font-semibold hover:opacity-75"
+          >
+            ×
+          </button>
+        )}
       </div>
-      <p className="font-medium">{message}</p>
     </div>
   );
 };
