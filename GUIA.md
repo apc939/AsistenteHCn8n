@@ -1,455 +1,205 @@
-# Guía de Integración - Sistema de Grabación con n8n (Notas Clínicas)
+# Guía Operativa &amp; de Integración — Asistente HC
 
-Esta guía explica cómo integrar la aplicación React TypeScript de consultas médicas con n8n, incluyendo el flujo completo desde la configuración de alias/IDs internos hasta el envío de audio y notas clínicas estructuradas.
+Esta guía describe el flujo definitivo de la aplicación, cómo configurarla y cómo conectarla con n8n y AssemblyAI para manejar audio, transcripción, notas clínicas y paraclínicos bajo prácticas alineadas a HIPAA.
 
-## 📋 Tabla de Contenidos
+## Tabla de Contenidos
 
-1. [Arquitectura del Sistema](#arquitectura-del-sistema)
-2. [Gestión de Consultas (Alias)](#gestión-de-consultas-alias)
-3. [Hook de Grabación de Audio](#hook-de-grabación-de-audio)
-4. [Servicio de Notas Clínicas](#servicio-de-notas-clínicas)
-5. [Carga de Audio Existente](#carga-de-audio-existente)
-6. [Servicio de Webhook](#servicio-de-webhook)
-7. [Componentes UI Reutilizables](#componentes-ui-reutilizables)
-8. [Formato de Datos Enviados](#formato-de-datos-enviados)
-9. [Sistema de Logs y Estados](#sistema-de-logs-y-estados)
-10. [Integración Completa](#integración-completa)
-11. [Consideraciones de Seguridad](#consideraciones-de-seguridad)
-12. [Ventajas frente a HIPAA](#-ventajas-frente-a-hipaa)
-
----
-
-## 🏗️ Arquitectura del Sistema
-
-```
-┌─────────────────┐    ┌─────────────────────┐    ┌──────────────────┐
-│ Alias Form      │───▶│ Recording/Upload    │───▶│ Webhook Service  │
-│ (alias + id)    │    │ + Privacy Warnings  │    │   + Validation   │
-└─────────────────┘    └─────────────────────┘    └──────────────────┘
-         │                       │                         │
-         ▼                       ▼                         ▼
-┌─────────────────┐    ┌─────────────────────┐    ┌──────────────────┐
-│ State Management│    │ Notes Management    │    │   n8n Workflow   │
-│ + Privacy Reset │    │  + Type Config      │    │  + Logs System   │
-└─────────────────┘    └─────────────────────┘    └──────────────────┘
-```
-
-### Estados y interfaces principales
-
-```ts
-type RecordingState = 'idle' | 'recording' | 'paused' | 'stopped';
-
-interface PatientInfo {
-  name: string;   // alias anonimizado
-  cedula: string; // identificador interno (no PHI)
-}
-
-interface NoteEntry {
-  id: string;
-  typeId: string;
-  content: string;
-  updatedAt: number;
-}
-
-interface UploadedAudio {
-  file: File;
-  duration: number | null;
-}
-```
+1. [Arquitectura General](#arquitectura-general)
+2. [Checklist de Configuración Inicial](#checklist-de-configuración-inicial)
+3. [Gestión de encuentros clínicos](#gestión-de-encuentros-clínicos)
+4. [Flujo de audio (grabación/carga)](#flujo-de-audio-grabacióncarga)
+5. [Transcripción automática con AssemblyAI](#transcripción-automática-con-assemblyai)
+6. [Notas clínicas estructuradas](#notas-clínicas-estructuradas)
+7. [Paraclínicos y análisis de imágenes](#paraclínicos-y-análisis-de-imágenes)
+8. [Envío a n8n y contratos de datos](#envío-a-n8n-y-contratos-de-datos)
+9. [Validaciones, logs y manejo de errores](#validaciones-logs-y-manejo-de-errores)
+10. [Seguridad y mejores prácticas](#seguridad-y-mejores-prácticas)
+11. [Extensiones recomendadas](#extensiones-recomendadas)
 
 ---
 
-## 👤 Gestión de Consultas (Alias)
+## Arquitectura General
 
-El sistema solicita un alias y un identificador interno (sin PHI) antes de cualquier operación:
-
-### Flujo de identificación
-
-```ts
-const [patientInfo, setPatientInfo] = useState({
-  name: '',
-  cedula: ''
-});
-
-const [showPatientForm, setShowPatientForm] = useState(true);
-
-const generateEncounterId = () => `encounter_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-const [encounterId, setEncounterId] = useState(generateEncounterId);
+```
+┌──────────────────────┐
+│ Checklist de setup   │  AssemblyAI / n8n / Paraclínicos verificados
+└─────────┬────────────┘
+          │ habilita
+┌─────────▼──────────┐  alias + ID interno + encounterId
+│ Gestión de encuentro│
+└─────────┬──────────┘
+          │ abre
+┌─────────▼──────────────────────────────────────────────┐
+│ Workflow clínico                                       │
+│  ├─ Captura de audio (MediaRecorder / Upload)          │
+│  ├─ Transcripción automática + acciones manuales       │
+│  ├─ Notas estructuradas configurables                  │
+│  └─ Paraclínicos (imágenes + análisis)                 │
+└─────────┬──────────────────────────────────────────────┘
+          │ segrega
+┌─────────▼───────────┐        ┌─────────────────────────┐
+│ Logs temporales     │◀──────▶│ n8n webhooks (audio/text)│
+└─────────────────────┘        └─────────────────────────┘
 ```
 
-### Validaciones integradas
+Elementos principales:
 
-- Alias e identificador interno obligatorios antes de grabar o cargar audio
-- Regeneración del `encounterId` al iniciar una nueva consulta
-- Reset automático de datos sensibles en memoria al reiniciar
+- `App.tsx` orquesta tabs («Configuración», «Workflow») y el checklist.
+- Componentes especializados (`RecordingControls`, `TranscriptionPanel`, `ParaclinicPanel`, etc.) controlan cada subflujo.
+- Hooks encapsulan la lógica para audio (`useAudioRecorder`), notas (`useNotes`), transcripción (`useTranscription`) y paraclínicos (`useParaclinics`).
+- Servicios (`webhookService`, `transcriptionService`, `paraclinicService`, `notesService`) manejan persistencia segura y comunicación externa.
 
 ---
 
-## 🎤 Hook de Grabación de Audio
+## Checklist de Configuración Inicial
 
-El hook `useAudioRecorder` mantiene el ciclo de vida del `MediaRecorder`, gestiona el temporizador y expone el `Blob` de audio final.
+El usuario debe completar tres verificaciones antes de acceder al flujo clínico:
 
-### API
+1. **AssemblyAI** (`TranscriptionSettings`): ingresar API key y ejecutar «Probar conexión». Se llama a `client.transcripts.list` para validar. Si es exitoso se habilita la transcripción automáticamente.
+2. **Webhook principal n8n** (`WebhookSettings`): ingresar URL `https://` dentro de la allowlist (`VITE_ALLOWED_WEBHOOK_DOMAINS`) y verificar. Se envía POST de prueba `{"test":true}`.
+3. **Webhook de paraclínicos** (`ParaclinicSettings`): URL `https://` + test POST para validar recepción de imágenes.
 
-```ts
-const {
-  state,
-  startRecording,
-  pauseRecording,
-  stopRecording,
-  resetRecording,
-  recordingTime,
-  audioBlob,
-  error
-} = useAudioRecorder();
-```
-
-### Puntos Clave
-
-1. Solicita permisos de micrófono con cancelación de eco y reducción de ruido.
-2. Detecta el mejor MIME soportado (webm, mp3, wav, mp4...).
-3. Entrega un `Blob` con codec Opus listo para enviar a n8n.
+Mientras alguna verificación falla el tab activo permanece en «Configuración» y se bloquea la sección clínica.
 
 ---
 
-## 📝 Servicio de Notas Clínicas
+## Gestión de encuentros clínicos
 
-Las notas reemplazan la transcripción automática y permiten registrar hallazgos clínicos en secciones configurables.
-
-### Storage
-
-```ts
-// src/services/notesService.ts
-interface NoteType { id: string; label: string; }
-interface NotesConfig { types: NoteType[]; }
-```
-
-- Persistencia en `localStorage` únicamente para los **tipos** de notas (no para el contenido de cada consulta).
-- Tipos predeterminados: Análisis, Examen físico, Diagnóstico, Plan de tratamiento.
-
-### Hook `useNotes`
-
-```ts
-const {
-  notes,              // notas con metadata del tipo
-  noteTypes,          // tipos disponibles
-  addNote,
-  updateNoteContent,
-  updateNoteType,
-  removeNote,
-  clearNotes,
-  addNoteType,
-  updateNoteTypeLabel,
-  removeNoteType,
-  getNotesForSubmission // serialización lista para n8n
-} = useNotes();
-```
-
-- Las notas sólo viven en memoria mientras dura la sesión.
-- `getNotesForSubmission()` devuelve las notas listas para enviarse a n8n (filtrando textos vacíos).
+- **Formulario inicial**: solicita `alias` (identificador anónimo) y `cedula` (ID interno). Ambos son obligatorios antes de grabar, cargar audio o subir paraclínicos.
+- **Encounter ID**: `encounter_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`. Se regenera en reinicios y se usa para nombrar payloads.
+- **Privacidad previa**: al iniciar grabación se muestra `showRecordingPrivacyWarning` exigiendo confirmación explícita.
+- **Reinicio seguro**: `resetOnlyRecording` / `resetConsulta` limpia audio, notas, logs y genera nuevo encounter.
 
 ---
 
-## 📁 Carga de Audio Existente
+## Flujo de audio (grabación/carga)
 
-Sistema completo de upload con validaciones asíncronas y feedback visual en tiempo real.
+### Grabación en vivo
 
-### Validaciones secuenciales
+- `useAudioRecorder` controla el ciclo de vida de `MediaRecorder` e intenta codecs en orden (`audio/webm`, `audio/mp4`, `audio/mpeg`…).
+- Timer resiliente (`Timer.tsx`) mantiene segundos, incluso tras pausas.
+- Tras detener, el Blob se guarda en estado y queda disponible para transcribir/enviar.
 
-1. **Prerequisitos**: Validación de alias e identificadores internos obligatoria
-2. **Tipo**: Verificación `file.type.startsWith('audio/')`
-3. **Tamaño**: Límite de `MAX_AUDIO_FILE_SIZE` (~120 MB)
-4. **Duración**: Análisis asíncrono con `getAudioDurationFromFile()`
-5. **Estados**: Loading, success, error con mensajes contextuales
+### Carga de archivos
 
-### Implementación
-
-```ts
-const [uploadedAudio, setUploadedAudio] = useState<{
-  file: File;
-  duration: number | null;
-} | null>(null);
-
-const [isProcessingFile, setIsProcessingFile] = useState(false);
-
-const handleAudioFileSelect = async (event: ChangeEvent<HTMLInputElement>) => {
-  // Validaciones secuenciales con estados visuales
-  const duration = await getAudioDurationFromFile(file);
-  if (duration > MAX_AUDIO_DURATION_SECONDS) {
-    // Error handling con cleanup
-  }
-};
-```
-
-Audio cargado se integra completamente con el sistema de notas y se envía con `capture_method: 'uploaded'`.
+- `<input type="file">` acepta `audio/*`, `application/octet-stream` y extensiones: `.mp3`, `.m4a`, `.aac`, `.wav`, `.ogg`, `.webm`, `.mp4`, `.m4p`, `.caf`.
+- Validaciones al seleccionar: tamaño ≤120 MB, duración ≤60 min (`getAudioDurationFromFile` con HTMLAudioElement), MIME permitido o extensión alternativa.
+- Mensajes contextualizados (`uploadedAudioMessage`) indican éxito o error.
 
 ---
 
-## 🌐 Servicio de Webhook
+## Transcripción automática con AssemblyAI
 
-`webhookService` implementa comunicación robusta con validaciones y estados granulares.
-
-### API extendida
-
-```ts
-await webhookService.sendAudio(source, metadata, {
-  fileName: originalFileName,    // opcional: conserva nombre original
-  skipEnabledCheck: boolean     // permite envío manual cuando webhook deshabilitado
-});
-```
-
-### Características
-
-- **Configuración persistente**: URL y estado `enabled` en `localStorage`
-- **Validación previa**: `testConnection()` verifica conectividad
-- **Estados duales**: Envío automático vs manual con confirmaciones
-- **Metadatos enriquecidos**: Incluye `recording_type`, `capture_method`, timestamps
-- **Transporte seguro**: Fuerza `https://`, bloquea IPs directas y permite una allowlist de dominios
-- **Sanitización de archivos**: Normaliza nombres para evitar caracteres peligrosos
+- `useTranscription` mantiene la configuración y estados `isTranscribing`, `transcriptionResult`, `error`.
+- `transcribeBlob` y `transcribeFile` convierten audio a texto con `language_code: 'es'`, `punctuate: true`, `redact_pii: true` (políticas: `person_name`, `number_sequence`, `drivers_license`, etc., sustitución `hash`).
+- `TranscriptionPanel` permite:
+  - Transcribir manualmente la grabación o un audio cargado.
+  - Enviar la última transcripción a n8n.
+  - Limpiar resultado y error.
+  - Mostrar `confidence`, ID y estado devueltos por AssemblyAI.
 
 ---
 
-## 🧱 Componentes UI Reutilizables
+## Notas clínicas estructuradas
 
-| Componente | Propósito | Nuevas características |
-|------------|-----------|----------------------|
-| `RecordingControls` | Botones para iniciar/pausar/finalizar | Confirmaciones para acciones destructivas |
-| `NotesPanel` | Editor de notas organizado por tipo | Timestamps automáticos, tipos dinámicos |
-| `NotesSettings` | Administración de tipos de notas | Reset inteligente, validación de duplicados |
-| `WebhookSettings` | Configuración de webhook de n8n | Verificación de conectividad, estados visuales |
-| `StatusMessage` | Mensajes contextuales diferenciados | Tipos: global, por componente, con auto-close |
-| `Timer` | Cronómetro de grabación | Estados visuales según recording state |
-
-### Estados UI avanzados
-
-```ts
-interface StatusMessage {
-  message: string;
-  type: 'info' | 'success' | 'error' | 'warning';
-  onClose?: () => void;        // opcional para dismissible
-}
-
-// Estados globales vs contextuales
-const [showGlobalUploadStatus, setShowGlobalUploadStatus] = useState(false);
-const [uploadedAudioMessage, setUploadedAudioMessage] = useState<StatusMessage | null>(null);
-```
+- `useNotes` gestiona las notas en memoria y los tipos en `localStorage`.
+- Tipos por defecto: Análisis, Examen físico, Diagnóstico, Plan terapéutico (personalizables en `NotesSettings`).
+- Cada nota conserva `type_id`, `type_label`, `content`, `updated_at` en ISO y se desecha si queda vacía.
+- `NotesPanel` sincroniza edición en vivo, timestamps y permite duplicar/eliminar notas.
 
 ---
 
-## 📨 Formato de Datos Enviados
+## Paraclínicos y análisis de imágenes
 
-El `FormData` enviado a n8n ha sido enriquecido con metadatos completos:
+- `useParaclinics` valida que exista webhook configurado y habilitado antes de enviar.
+- `ParaclinicPanel` acepta múltiples archivos (imágenes o PDFs convertidos) y manda `FormData` con `images[]`, `metadata` (alias, ID interno, `encounterId`), `timestamp` y `type: 'paraclinic_document'`.
+- Tras enviar, cualquier JSON retornado se normaliza a:
+  - `summary` (extraído de `text`, `content.parts`, `summary`, etc.).
+  - `sections` opcionales para desglose.
+  - `logs` de envío (éxitos/errores) en memoria.
+
+---
+
+## Envío a n8n y contratos de datos
+
+### Transcripciones y notas (`webhookService.sendTranscription`)
 
 ```json
 {
-  "audio": <Blob>,
-  "timestamp": "2025-01-15T14:30:45.000Z",
+  "transcript": "Paciente refiere dolor precordial intermitente…",
+  "timestamp": "2024-05-12T18:22:41.910Z",
   "type": "medical_consultation",
-  "recording_type": "medical_consultation",
-  "duration": 1247,
-  "encounter_id": "encounter_h0asf3",
-  "capture_method": "uploaded",
+  "encounter_id": "encounter_lq4h5s_x12af9",
+  "capture_method": "uploaded",  // "recorded" o "uploaded"
+  "duration": 184,
   "notes": [
     {
-      "id": "1705327845000-xyz789",
-      "type_id": "physical_exam",
-      "type_label": "Examen físico",
-      "content": "Presión arterial: 120/80 mmHg. Pulso regular.",
-      "updated_at": "2025-01-15T14:32:15.000Z"
-    },
-    {
-      "id": "1705327920000-abc456",
-      "type_id": "diagnosis",
-      "type_label": "Diagnóstico",
-      "content": "Hipertensión arterial controlada.",
-      "updated_at": "2025-01-15T14:33:40.000Z"
+      "id": "1715531723500-6z31f7",
+      "type_id": "plan",
+      "type_label": "Plan terapéutico",
+      "content": "Iniciar beta bloqueador…",
+      "updated_at": "2024-05-12T18:22:05.112Z"
     }
   ]
 }
 ```
 
-### Campos agregados
+- Si no hay notas, el campo `notes` se omite.
+- `allowDisabledWebhook` permite envíos manuales incluso cuando `enabled` está en `false` (el usuario confirma explícitamente).
+- Logs reflejan duración formateada y resultado (`success` / `error`).
 
-- **`recording_type`**: Tipo específico de consulta médica
-- **`updated_at`**: Timestamp ISO para cada nota individual
-- **Validación**: Las notas vacías se filtran automáticamente con `getNotesForSubmission()`
+### Paraclínicos (`paraclinicService.sendImages`)
 
----
+`FormData` → `POST https://<dominio permitido>/paraclinics` con campos:
 
-## 📊 Sistema de Logs y Estados
+- `images`: múltiples archivos.
+- `timestamp`: ISO.
+- `type`: `paraclinic_document`.
+- `metadata`: JSON string con `encounterId`, `patientAlias`, `patientInternalId`.
 
-Implementación de logs temporales con gestión de privacidad:
+Respuesta esperada (`ParaclinicAnalysisResult`):
 
-### Logs en memoria
-
-```ts
-interface LogEntry {
-  id: string;
-  timestamp: string;           // formato localizado
-  duration: number;
-  status: 'success' | 'error';
-  message: string;            // descriptivo con contexto
-}
-
-const [sendingLogs, setSendingLogs] = useState<LogEntry[]>([]);
-```
-
-### Características de logging
-
-- **Solo en memoria**: No persiste en `localStorage` por privacidad
-- **Límite de 10 entradas**: Mantiene solo los envíos más recientes
-- **Limpieza automática**: Al reiniciar la consulta o cerrar sesión
-- **Timestamps localizados**: Formato español `es-ES`
-- **Contexto completo**: Alias/encuentro, duración, notas incluidas
-
----
-
-## 🔄 Integración Completa
-
-Ejemplo actualizado con gestión completa de alias y estados:
-
-```tsx
-import { useState, useEffect } from 'react';
-import { useAudioRecorder } from './hooks/useAudioRecorder';
-import { useNotes } from './hooks/useNotes';
-import { webhookService } from './services/webhookService';
-
-export function ConsultaCompleta() {
-  const { state, startRecording, stopRecording, audioBlob, recordingTime } = useAudioRecorder();
-  const { notes, addNote, getNotesForSubmission, clearNotes } = useNotes();
-
-  // Gestión de alias y consulta
-  const [patientInfo, setPatientInfo] = useState({ name: '', cedula: '' });
-  const [showPatientForm, setShowPatientForm] = useState(true);
-  const generateEncounterId = () => `encounter_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-  const [encounterId, setEncounterId] = useState(() => generateEncounterId());
-  const [showPrivacyWarning, setShowPrivacyWarning] = useState(false);
-
-  // Estados de UI
-  const [isUploading, setIsUploading] = useState(false);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-
-  const startWithPrivacyCheck = () => {
-    setShowPrivacyWarning(true);
-  };
-
-  const confirmAndStart = async () => {
-    setShowPrivacyWarning(false);
-    try {
-      await startRecording();
-      setShowPatientForm(false);
-    } catch (error) {
-      // Handle recording errors
-    }
-  };
-
-  const enviarAudio = async () => {
-    if (!audioBlob || !patientInfo.name.trim() || !patientInfo.cedula.trim()) return;
-
-    setIsUploading(true);
-    try {
-      await webhookService.sendAudio(audioBlob, {
-        recording_type: 'medical_consultation',
-        duration: recordingTime,
-        encounter_id: encounterId,
-        capture_method: 'recorded',
-        notes: getNotesForSubmission()
-      });
-
-      // Log successful send
-      addLog('success', recordingTime, `Consulta ${encounterId} enviada`);
-
-    } catch (error) {
-      addLog('error', recordingTime, `Error: ${error.message}`);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const resetConsulta = () => {
-    setPatientInfo({ name: '', cedula: '' });
-    setShowPatientForm(true);
-    setEncounterId(generateEncounterId());
-    clearNotes();
-    setLogs([]);
-  };
-
-  return (
-    <div>
-      {showPatientForm ? (
-        <PatientForm
-          patientInfo={patientInfo}
-          onChange={setPatientInfo}
-          onStart={startWithPrivacyCheck}
-        />
-      ) : (
-        <RecordingInterface
-          state={state}
-          onStart={startWithPrivacyCheck}
-          onStop={stopRecording}
-          onSend={enviarAudio}
-          onReset={resetConsulta}
-          isUploading={isUploading}
-        />
-      )}
-
-      {showPrivacyWarning && (
-        <PrivacyWarning
-          onConfirm={confirmAndStart}
-          onCancel={() => setShowPrivacyWarning(false)}
-        />
-      )}
-
-      <NotesPanel notes={notes} />
-      <LogsPanel logs={logs} />
-    </div>
-  );
+```json
+{
+  "id": "lab_panel_20240512",
+  "summary": "Analítica compatible con anemia ferropénica moderada.",
+  "sections": [
+    { "title": "Hemograma", "content": "Hb 9.8 g/dL…" },
+    { "title": "Recomendaciones", "content": "Solicitar ferritina sérica…" }
+  ],
+  "raw": { "provider": "claude", "version": "1.2.0" }
 }
 ```
 
 ---
 
-## 🔒 Consideraciones de Seguridad
+## Validaciones, logs y manejo de errores
 
-### Privacidad por diseño
-
-1. **Limpieza proactiva**: `localStorage.removeItem('n8n-sending-logs')` en `beforeunload` y reinicios de consulta
-2. **Advertencias contextuales**: Recordatorios explícitos antes de cada grabación sobre datos sensibles
-3. **Solo configuración persiste**: Únicamente webhook URL y tipos de notas se guardan localmente
-4. **Datos médicos efímeros**: Audio, notas y alias/encounter solo en memoria durante la sesión
-
-### Validaciones técnicas
-
-1. **HTTPS obligatorio**: Requerido por MediaRecorder API y FileReader API
-2. **Límites estrictos**: 60 min / 120 MB previenen saturación del flujo n8n
-3. **Validación asíncrona**: Verificación de duración antes de aceptar archivos
-4. **Estados de loading**: Previenen múltiples envíos simultáneos
-
-### Confirmaciones de usuario
-
-1. **Grabación**: Advertencia explícita sobre privacidad antes de iniciar
-2. **Envío manual**: Confirmación con `window.confirm()` para acciones críticas
-3. **Nueva consulta**: Limpieza automática con confirmación visual
-4. **Acciones destructivas**: Confirmación antes de detener grabaciones en progreso
+- **Audio**: MIME/extensiones, tamaño, duración, confirmación de privacidad y bloqueo si faltan alias/ID interno.
+- **Transcripción**: se muestran errores de AssemblyAI; la UI ofrece limpiar error y reintentar.
+- **Webhook n8n**: `StatusMessage` global indica progreso, éxito o fallo; logs internos guardan duración y mensaje.
+- **Paraclínicos**: logs independientes con timestamp, estado y mensaje; se pueden limpiar manualmente.
+- **Persistencia mínima**: solo configuraciones (sin credenciales) y tipos de nota residen en `localStorage`.
 
 ---
 
-## ✅ Ventajas frente a HIPAA
+## Seguridad y mejores prácticas
 
-- **Minimización de identificadores**: alias, IDs internos y `encounter_id` sustituyen datos personales en todo el flujo.
-- **Datos efímeros en frontend**: audio, notas, alias y logs permanecen solo en memoria; no hay persistencia de PHI.
-- **Transporte asegurado**: el webhook fuerza `https://`, bloquea IPs e incorpora allowlist configurable para dominios aprobados.
-- **Controles preventivos**: advertencias de privacidad, confirmaciones y validaciones sequenciales reducen errores operativos.
-- **Nombres de archivo neutros**: descargas y envíos utilizan identificadores anónimos para evitar filtraciones involuntarias.
+- `ensureSecureWebhookUrl` aplica HTTPS + allowlist y bloquea IP literal.
+- Confirmaciones previas a acciones críticas (`window.confirm`) y advertencias permanentes en UI.
+- Nombres de archivo generados (`consulta_<timestamp>.webm`) sin PHI.
+- Limpieza de datos sensibles en `beforeunload` y tras reiniciar consulta.
+- Transcripción con desidentificación automática de PII.
+- Recomendación: Firma HMAC/JWT en backend para completar protección (ver checklist HIPAA).
 
 ---
 
-## 🚀 Extensiones Recomendadas
+## Extensiones recomendadas
 
-- **Hooks portables**: Reutiliza `useAudioRecorder`, `useNotes` en otras aplicaciones React
-- **Servicios modulares**: `webhookService` y `notesService` son independientes del UI
-- **Metadatos extensibles**: Agrega campos personalizados al payload según especialidad médica
-- **Estados granulares**: Implementa validaciones específicas según flujo de trabajo
-- **Integración EHR**: Mapea `type_id` y `type_label` a sistemas hospitalarios existentes
+1. **Firmas de webhook y replay protection**: agregar nonce/timestamp en cliente y verificación en n8n.
+2. **Políticas por rol**: usar SSO y permisos para controlar quién puede grabar o enviar.
+3. **Historias clínicas**: mapear `type_id` a códigos estandarizados (SNOMED/LOINC) en n8n.
+4. **Alertas automáticas**: enviar notificaciones cuando `confidence` de transcripción sea baja.
+5. **Integración EHR**: replicar payloads en un motor FHIR usando `encounter_id` como hilo conductor.
 
-¿Necesitas adaptar el sistema? La arquitectura modular permite customizar la UI manteniendo la lógica crítica de grabación, notas y comunicación con n8n.
+Con estos pasos, la app queda lista para operar con transcripciones automáticas, notas estructuradas y análisis de paraclínicos, manteniendo controles de privacidad consistentes.

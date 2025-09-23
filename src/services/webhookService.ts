@@ -19,7 +19,7 @@ const isHostnameAllowed = (hostname: string): boolean =>
     (domain: string) => hostname === domain || hostname.endsWith(`.${domain}`)
   );
 
-const ensureSecureWebhookUrl = (value: string): URL => {
+export const ensureSecureWebhookUrl = (value: string): URL => {
   if (!value) {
     throw new Error('URL del webhook no configurada');
   }
@@ -121,10 +121,10 @@ export class WebhookService {
     }
   }
 
-  async sendAudio(
-    audioBlob: Blob,
+  async sendTranscription(
+    transcript: string,
     metadata?: Record<string, any>,
-    options?: { fileName?: string; skipEnabledCheck?: boolean }
+    options?: { skipEnabledCheck?: boolean }
   ): Promise<boolean> {
     if (!this.config.url) {
       throw new Error('URL del webhook no configurada');
@@ -136,8 +136,50 @@ export class WebhookService {
 
     const secureUrl = ensureSecureWebhookUrl(this.config.url);
 
+    const timestamp = new Date().toISOString();
+
+    const payload = {
+      transcript,
+      timestamp,
+      type: 'medical_consultation',
+      ...metadata
+    };
+
+    const response = await fetch(secureUrl.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    return true;
+  }
+
+  // Legacy method - kept for backward compatibility but deprecated
+  async sendAudio(
+    audioBlob: Blob,
+    metadata?: Record<string, any>,
+    options?: { fileName?: string; skipEnabledCheck?: boolean }
+  ): Promise<boolean> {
+    console.warn('sendAudio is deprecated. Use sendTranscription instead.');
+
+    if (!this.config.url) {
+      throw new Error('URL del webhook no configurada');
+    }
+
+    if (!this.config.enabled && !options?.skipEnabledCheck) {
+      throw new Error('El envío automático está deshabilitado');
+    }
+
+    const secureUrl = ensureSecureWebhookUrl(this.config.url);
+
     const formData = new FormData();
-    
+
     const timestamp = new Date().toISOString();
     const defaultExtension = (() => {
       if (audioBlob.type.includes('mp3') || audioBlob.type.includes('mpeg')) return 'mp3';
@@ -170,7 +212,7 @@ export class WebhookService {
     formData.append('audio', audioBlob, filename);
     formData.append('timestamp', timestamp);
     formData.append('type', 'medical_consultation');
-    
+
     if (metadata) {
       Object.entries(metadata).forEach(([key, value]) => {
         if (typeof value === 'object') {

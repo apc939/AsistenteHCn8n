@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { Link2, ChevronDown, ChevronUp, Loader, CheckCircle } from 'lucide-react';
 import { webhookService, WebhookConfig } from '../services/webhookService';
 import { StatusMessage } from './StatusMessage';
+import {
+  settingsCardBase,
+  settingsHeaderButton,
+  statusPill,
+  accordionIconActive,
+  toggleWrapper,
+  toggleThumb,
+} from './settingsStyles';
 
 interface WebhookSettingsProps {
   onConfigChange?: (config: WebhookConfig) => void;
@@ -153,29 +162,35 @@ export const WebhookSettings: React.FC<WebhookSettingsProps> = ({ onConfigChange
     setTestStatus(null);
   };
 
+  const isReady = config.isVerified && config.enabled;
+
   return (
-    <div className="bg-white rounded-2xl shadow-xl p-8">
-      <div 
-        className="flex items-center justify-between cursor-pointer group"
+    <div className={settingsCardBase}>
+      <button
         onClick={() => setIsExpanded(!isExpanded)}
+        className={`${settingsHeaderButton} flex items-center justify-between`}
       >
-        <h3 className="text-xl font-semibold text-gray-800 group-hover:text-blue-600 transition-colors">
-          Configuración del Webhook n8n
-        </h3>
         <div className="flex items-center space-x-3">
-          {config.url.trim() && config.isVerified && (
-            <span className="bg-green-100 text-green-800 text-sm px-3 py-1 rounded-full font-medium">
-              Activo
-            </span>
-          )}
-          <span className={`transform transition-transform text-gray-400 ${isExpanded ? 'rotate-180' : ''}`}>
-            ▼
-          </span>
+          <Link2 className="h-6 w-6 text-indigo-600" />
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Webhook n8n (transcripciones y notas)</h3>
+            <p className="text-sm text-gray-600">Entrega automática de resultados a tu flujo n8n</p>
+          </div>
         </div>
-      </div>
+        <div className="flex items-center space-x-3">
+          <span className={statusPill(isReady)}>
+            {isReady ? (config.enabled ? 'Configurado con envío automático' : 'Configurado sin envío automático') : 'Pendiente'}
+          </span>
+          {isExpanded ? (
+            <ChevronUp className={accordionIconActive} />
+          ) : (
+            <ChevronDown className={accordionIconActive} />
+          )}
+        </div>
+      </button>
 
       {isExpanded && (
-        <div className="mt-4 space-y-4">
+        <div className="px-6 pb-6 border-t border-gray-100 space-y-6 mt-6">
           <div>
             <label htmlFor="webhook-url" className="block text-sm font-medium text-gray-700 mb-2">
               URL del Webhook n8n
@@ -186,31 +201,50 @@ export const WebhookSettings: React.FC<WebhookSettingsProps> = ({ onConfigChange
               value={config.url}
               onChange={(e) => handleConfigChange({ url: e.target.value })}
               placeholder="https://n8n.tudominio.com/webhook/consultas-medicas"
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 bg-white placeholder-gray-400"
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-gray-900 bg-white placeholder-gray-400"
             />
           </div>
 
-          <div className="flex items-center">
-            <input
-              id="webhook-enabled"
-              type="checkbox"
-              checked={config.enabled}
-              onChange={(e) => handleConfigChange({ enabled: e.target.checked })}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-            />
-            <label htmlFor="webhook-enabled" className="ml-2 block text-sm text-gray-700">
-              Habilitar envío automático al finalizar grabación
-            </label>
+          <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+            <div>
+              <h4 className="font-medium text-gray-900">Envío automático</h4>
+              <p className="text-sm text-gray-600">
+                Publicar transcripciones y notas al finalizar cada encuentro
+              </p>
+            </div>
+            <button
+              onClick={() => handleConfigChange({ enabled: !config.enabled })}
+              disabled={!config.isVerified}
+              className={`${toggleWrapper(config.enabled)} disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              <span className={toggleThumb(config.enabled)} />
+            </button>
           </div>
 
-          <div className="flex space-x-2">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 space-y-3 sm:space-y-0">
             <button
               onClick={testConnection}
               disabled={isTesting || !config.url.trim()}
-              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-xl font-medium transition-colors flex items-center justify-center space-x-2"
             >
-              {isTesting ? 'Probando...' : 'Probar Conexión'}
+              {isTesting ? (
+                <>
+                  <Loader className="h-4 w-4 animate-spin" />
+                  <span>Probando conexión...</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="h-4 w-4" />
+                  <span>Probar conexión</span>
+                </>
+              )}
             </button>
+
+            {config.lastTestedAt && (
+              <p className="text-xs text-gray-500">
+                Última prueba: {new Date(config.lastTestedAt).toLocaleString('es-ES')}
+              </p>
+            )}
           </div>
 
           {urlStatus && (
@@ -229,12 +263,12 @@ export const WebhookSettings: React.FC<WebhookSettingsProps> = ({ onConfigChange
             />
           )}
 
-          <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-md">
-            <p><strong>Nota:</strong> El webhook recibirá un FormData con:</p>
-            <ul className="list-disc list-inside mt-1 space-y-1">
-              <li><code>audio</code>: Archivo de audio en formato WebM</li>
-              <li><code>timestamp</code>: Fecha y hora de la grabación</li>
-              <li><code>type</code>: "medical_consultation"</li>
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800 space-y-1">
+            <p className="font-medium text-blue-900">Datos enviados al webhook:</p>
+            <ul className="list-disc list-inside space-y-1">
+              <li><code>transcript</code>: texto final (cuando está habilitado)</li>
+              <li><code>notes</code>: notas clínicas estructuradas</li>
+              <li><code>timestamp</code>, <code>encounter_id</code>, <code>capture_method</code></li>
             </ul>
           </div>
         </div>
