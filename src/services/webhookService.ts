@@ -5,6 +5,9 @@ export interface WebhookConfig {
   lastTestedAt?: string;
 }
 
+const DEFAULT_TRANSCRIPTION_WEBHOOK =
+  'https://piloto-n8n.2ppzbm.easypanel.host/webhook/a9259909-885a-4670-8c65-85036a79b582';
+
 const rawAllowedWebhookDomains = import.meta.env.VITE_ALLOWED_WEBHOOK_DOMAINS ?? '';
 const allowedWebhookDomains = rawAllowedWebhookDomains
   .split(',')
@@ -44,13 +47,14 @@ export const ensureSecureWebhookUrl = (value: string): URL => {
 
 export class WebhookService {
   private config: WebhookConfig = {
-    url: '',
+    url: DEFAULT_TRANSCRIPTION_WEBHOOK,
     enabled: false,
     isVerified: false,
   };
 
   setConfig(config: Partial<WebhookConfig>) {
-    this.config = { ...this.config, ...config };
+    const { url: _ignoredUrl, ...rest } = config;
+    this.config = { ...this.config, ...rest, url: DEFAULT_TRANSCRIPTION_WEBHOOK };
 
     if (this.config.enabled) {
       try {
@@ -60,19 +64,23 @@ export class WebhookService {
       }
     }
 
-    localStorage.setItem('webhook-config', JSON.stringify(this.config));
+    localStorage.setItem(
+      'webhook-config',
+      JSON.stringify({ ...this.config, url: DEFAULT_TRANSCRIPTION_WEBHOOK })
+    );
   }
 
   getConfig(): WebhookConfig {
     const stored = localStorage.getItem('webhook-config');
     if (stored) {
       try {
-        const parsed = JSON.parse(stored) as Partial<WebhookConfig>;
+        const { url: _ignoredUrl, ...rest } = JSON.parse(stored) as Partial<WebhookConfig>;
         this.config = {
           ...this.config,
-          ...parsed,
-          isVerified: Boolean(parsed?.isVerified),
-          lastTestedAt: parsed?.lastTestedAt,
+          ...rest,
+          isVerified: Boolean(rest?.isVerified),
+          lastTestedAt: rest?.lastTestedAt,
+          url: DEFAULT_TRANSCRIPTION_WEBHOOK,
         };
         if (this.config.enabled) {
           try {
@@ -85,6 +93,7 @@ export class WebhookService {
         // Ignore invalid config
       }
     }
+    this.config.url = DEFAULT_TRANSCRIPTION_WEBHOOK;
     return this.config;
   }
 
@@ -108,6 +117,7 @@ export class WebhookService {
 
       this.setConfig({
         isVerified: isSuccess,
+        enabled: isSuccess ? true : this.config.enabled,
         lastTestedAt: new Date().toISOString(),
       });
 

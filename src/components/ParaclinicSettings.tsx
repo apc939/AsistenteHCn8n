@@ -1,46 +1,31 @@
 import { useState } from 'react';
-import { FlaskConical, CheckCircle, Loader, ChevronDown, ChevronUp } from 'lucide-react';
+import { FlaskConical, CheckCircle, Loader, ChevronDown, ChevronUp, Lock } from 'lucide-react';
 import { ParaclinicWebhookConfig } from '../services/paraclinicService';
 import {
   settingsCardBase,
   settingsHeaderButton,
   statusPill,
   accordionIconActive,
-  toggleWrapper,
-  toggleThumb,
 } from './settingsStyles';
 
 interface ParaclinicSettingsProps {
   config: ParaclinicWebhookConfig;
-  onConfigChange: (config: Partial<ParaclinicWebhookConfig>) => void;
+  onConfigChange?: (config: Partial<ParaclinicWebhookConfig>) => void;
   onTestConnection: () => Promise<boolean>;
 }
 
 export function ParaclinicSettings({
   config,
-  onConfigChange,
+  onConfigChange: _onConfigChange,
   onTestConnection,
 }: ParaclinicSettingsProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
-  const [url, setUrl] = useState(config.url ?? '');
-
-  const handleUrlChange = (value: string) => {
-    setUrl(value);
-    onConfigChange({ url: value });
-  };
-
-  const handleToggleEnabled = () => {
-    if (!config.isVerified && !config.enabled) {
-      alert('Verifica primero el webhook de paraclínicos antes de habilitarlo.');
-      return;
-    }
-    onConfigChange({ enabled: !config.enabled });
-  };
+  const [url] = useState(config.url ?? '');
 
   const handleTestConnection = async () => {
     if (!url.trim()) {
-      alert('Ingresa la URL del webhook de paraclínicos antes de probar.');
+      alert('La URL del webhook de paraclínicos está definida en el backend.');
       return;
     }
     setIsTesting(true);
@@ -49,7 +34,7 @@ export function ParaclinicSettings({
       if (ok) {
         alert('✅ Conexión exitosa con el webhook de paraclínicos.');
       } else {
-        alert('❌ No se pudo verificar el webhook de paraclínicos.');
+        alert('❌ No se pudo verificar el webhook de paraclínicos. Revisa la configuración en el backend.');
       }
     } catch (error) {
       alert(`❌ Error: ${error instanceof Error ? error.message : 'Error desconocido'}`);
@@ -88,21 +73,19 @@ export function ParaclinicSettings({
       {isExpanded && (
         <div className="px-6 pb-6 border-t border-gray-100">
           <div className="space-y-6 mt-6">
-            <div>
-              <label htmlFor="paraclinic-webhook-url" className="block text-sm font-medium text-gray-700 mb-2">
-                URL del webhook de paraclínicos
-              </label>
-              <input
-                id="paraclinic-webhook-url"
-                type="url"
-                value={url}
-                onChange={(event) => handleUrlChange(event.target.value)}
-                placeholder="https://mi-servidor.n8n.cloud/webhook/paraclinicos"
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-2">
-                Asegúrate de que la URL use HTTPS y que el dominio esté incluido en la lista segura.
-              </p>
+            <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+              <div className="flex items-start space-x-3">
+                <Lock className="h-5 w-5 text-gray-400 mt-1" />
+                <div>
+                  <h4 className="font-medium text-gray-900">URL del webhook de paraclínicos</h4>
+                  <p className="text-sm text-gray-600">
+                    Endpoint gestionado en el backend. Puedes copiarlo, pero permanece bloqueado para cambios.
+                  </p>
+                  <code className="mt-3 block w-full break-all rounded-lg bg-white border border-gray-200 px-3 py-2 text-sm text-gray-800">
+                    {url}
+                  </code>
+                </div>
+              </div>
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 space-y-3 sm:space-y-0">
@@ -129,22 +112,6 @@ export function ParaclinicSettings({
                   Última prueba: {new Date(config.lastTestedAt).toLocaleString('es-ES')}
                 </p>
               )}
-            </div>
-
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-              <div>
-                <h4 className="font-medium text-gray-900">Envío automático</h4>
-                <p className="text-sm text-gray-600">
-                  Enviar imágenes inmediatamente después de cargarlas
-                </p>
-              </div>
-              <button
-                onClick={handleToggleEnabled}
-                disabled={!config.isVerified}
-                className={`${toggleWrapper(config.enabled)} disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                <span className={toggleThumb(config.enabled)} />
-              </button>
             </div>
 
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">

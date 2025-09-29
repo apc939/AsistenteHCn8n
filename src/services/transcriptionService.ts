@@ -1,5 +1,7 @@
 import { AssemblyAI, type PiiPolicy, type SubstitutionPolicy } from 'assemblyai';
 
+const DEFAULT_ASSEMBLY_API_KEY = 'b99194c271594e8680dcdcd6102585f7';
+
 export interface TranscriptionConfig {
   apiKey: string;
   enabled: boolean;
@@ -29,7 +31,7 @@ const DEFAULT_PII_SUBSTITUTION: SubstitutionPolicy = 'hash';
 
 export class TranscriptionService {
   private config: TranscriptionConfig = {
-    apiKey: 'aec616f9024f430eaea9d9a687d62e89',
+    apiKey: DEFAULT_ASSEMBLY_API_KEY,
     enabled: false,
     isVerified: false,
   };
@@ -37,7 +39,14 @@ export class TranscriptionService {
   setConfig(config: Partial<TranscriptionConfig>) {
     this.config = { ...this.config, ...config };
 
-    // Store config but exclude API key for security
+    const sanitizedConfig: Partial<TranscriptionConfig> = {
+      enabled: config.enabled ?? this.config.enabled,
+      isVerified: config.isVerified ?? this.config.isVerified,
+      lastTestedAt: config.lastTestedAt ?? this.config.lastTestedAt,
+    };
+
+    this.config = { ...this.config, ...sanitizedConfig, apiKey: DEFAULT_ASSEMBLY_API_KEY };
+
     const configToStore = {
       enabled: this.config.enabled,
       isVerified: this.config.isVerified,
@@ -46,33 +55,28 @@ export class TranscriptionService {
 
     localStorage.setItem('transcription-config', JSON.stringify(configToStore));
 
-    // Store API key separately (could be enhanced with encryption)
-    if (config.apiKey) {
-      localStorage.setItem('assemblyai-api-key', config.apiKey);
-    }
+    // Ensure legacy storage slots stay in sync with backend-managed credentials
+    localStorage.setItem('assemblyai-api-key', DEFAULT_ASSEMBLY_API_KEY);
   }
 
   getConfig(): TranscriptionConfig {
     const stored = localStorage.getItem('transcription-config');
-    const storedApiKey = localStorage.getItem('assemblyai-api-key');
 
     if (stored) {
       try {
-        const parsed = JSON.parse(stored) as Partial<TranscriptionConfig>;
+        const { apiKey: _ignoredApiKey, ...rest } = JSON.parse(stored) as Partial<TranscriptionConfig>;
         this.config = {
           ...this.config,
-          ...parsed,
-          apiKey: storedApiKey || '',
-          isVerified: Boolean(parsed?.isVerified),
-          lastTestedAt: parsed?.lastTestedAt,
+          ...rest,
+          isVerified: Boolean(rest?.isVerified),
+          lastTestedAt: rest?.lastTestedAt,
         };
       } catch (error) {
         // Ignore invalid config
       }
-    } else if (storedApiKey) {
-      this.config.apiKey = storedApiKey;
     }
 
+    this.config.apiKey = DEFAULT_ASSEMBLY_API_KEY;
     return this.config;
   }
 

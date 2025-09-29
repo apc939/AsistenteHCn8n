@@ -14,6 +14,7 @@ Toda la información sensible vive en memoria y solo se serializa para enviar al
 ## ✅ Reglas de Implementación y Aprendizajes Clave
 
 - **URLs blindadas**: `ensureSecureWebhookUrl()` obliga `https://`, aplica allowlist (`VITE_ALLOWED_WEBHOOK_DOMAINS`) y bloquea IPs directas para webhooks y paraclínicos.
+- **Credenciales provistas por backend**: la API key de AssemblyAI y las URLs de webhooks viven en servicios, son de solo lectura en la UI y solo permiten ejecutar pruebas de conectividad.
 - **Flujo gated por checklist**: el usuario no accede al workflow clínico hasta verificar AssemblyAI, webhook n8n y webhook de paraclínicos.
 - **Datos efímeros**: audio, notas, alias y logs solo existen en memoria; `beforeunload` purga todo. Únicamente persisten configuraciones.
 - **Compatibilidad móvil**: lista explícita de MIME/extension de iOS + verificación de duración asíncrona previenen rechazos en Safari.
@@ -31,10 +32,10 @@ src/
 │   ├── NotesPanel.tsx               # Editor estructurado con tipos dinámicos
 │   ├── NotesSettings.tsx            # CRUD de tipos de notas con persistencia segura
 │   ├── TranscriptionPanel.tsx       # Resultados, acciones manuales y estado AssemblyAI
-│   ├── TranscriptionSettings.tsx    # Configuración y verificación de AssemblyAI
+│   ├── TranscriptionSettings.tsx    # Verificación de AssemblyAI con credencial fijada
 │   ├── ParaclinicPanel.tsx          # Upload, estado de análisis y visor de logs
-│   ├── ParaclinicSettings.tsx       # Gestión del webhook de paraclínicos
-│   ├── WebhookSettings.tsx          # Configuración/validación del webhook n8n
+│   ├── ParaclinicSettings.tsx       # Prueba del webhook de paraclínicos bloqueado
+│   ├── WebhookSettings.tsx          # Probar el webhook n8n preconfigurado
 │   ├── StatusMessage.tsx            # Sistema unificado de alertas y banners
 │   └── Timer.tsx                    # Cronómetro resiliente a pausas/reanudaciones
 ├── hooks/
@@ -57,7 +58,7 @@ src/
    - Validaciones: MIME/extension, tamaño ≤120 MB, duración ≤60 min, confirmaciones de privacidad.
    - `useAudioRecorder` mantiene estado debouncing y `audioBlob` final.
 4. **Transcripción AssemblyAI**:
-   - `useTranscription` verifica API key (list transcripts) antes de habilitar.
+   - `useTranscription` valida la API key provisionada (list transcripts) antes de habilitar.
    - Transcripciones automáticas redactan PII con políticas `person_name`, `number_sequence`, etc.
 5. **Notas estructuradas**:
    - Tipos configurables persistidos; contenido solo en memoria.
@@ -66,7 +67,7 @@ src/
    - `sendTranscription()` crea payload JSON con `transcript`, `encounter_id`, `capture_method`, `duration`, `notes[]`.
    - Logs en memoria registran éxitos/errores sin identificar pacientes.
 7. **Paraclínicos**:
-   - `sendImages()` usa `FormData` (`images[]`, `metadata`, `timestamp`).
+   - `sendImages()` usa `FormData` (`images[]`, `metadata`, `timestamp`) sobre la URL fijada en el servicio.
    - La respuesta se normaliza a `ParaclinicAnalysisResult` (`summary`, `sections`, `raw`).
 
 ## 🧩 Hooks y Servicios Destacados
@@ -79,18 +80,19 @@ src/
 
 ### `useTranscription`
 
-- Persiste configuración aislando API key de flags (`enabled`, `isVerified`).
+- Persiste configuración sin aceptar modificaciones de API key; el servicio restablece el valor backend en cada actualización.
 - `testConnection()` usa `client.transcripts.list` como verificación ligera.
 - `transcribeBlob`/`transcribeFile` aplican políticas PII y devuelven `{ text, confidence, id }`.
 
 ### `useParaclinics`
 
 - Mantiene cola de logs (máx. 10) y limpia análisis manualmente.
-- `sendImages()` exige webhook activo, aplica `ensureSecureWebhookUrl` y normaliza resumen para UI.
+- `sendImages()` exige webhook activo, aplica `ensureSecureWebhookUrl` y normaliza resumen para UI; la URL proviene del servicio y es inmutable para el usuario.
 
 ### `webhookService`
 
 - `ensureSecureWebhookUrl()` centraliza reglas TLS + allowlist.
+- Arranca con `https://piloto-n8n.2ppzbm.easypanel.host/webhook/a9259909-885a-4670-8c65-85036a79b582` y fuerza que la URL permanezca fija aunque la UI intente modificarla.
 - `sendTranscription()` emite JSON simple; `sendAudio()` queda como legado (aviso por consola).
 - Guarda `enabled/isVerified/lastTestedAt` en localStorage sin credenciales.
 
@@ -135,9 +137,9 @@ src/
 ## 🧠 Buenas Prácticas consolidadas
 
 - **Siempre probar en iOS** tras tocar carga/gravación; Safari usa MIME genéricos.
-- **Mantener allowlist actualizada** en `.env` para prevenir destinos no aprobados.
+- **Mantener allowlist actualizada** en `.env` y coordinar con backend para reflejar dominios autorizados.
 - **Firmar solicitudes en backend** (pendiente) pese a validaciones cliente.
-- **Rotar API key de AssemblyAI** y limpiar `localStorage` manualmente antes de compartir dispositivos.
+- **Rotar API key de AssemblyAI** desde backend y reconstruir el frontend; aun así limpiar `localStorage` antes de compartir dispositivos.
 - **Agregar tests de integración** para validar límites (duración, tamaño, allowlist) al actualizar dependencias.
 
 ## 🔒 Controles de Seguridad vigentes

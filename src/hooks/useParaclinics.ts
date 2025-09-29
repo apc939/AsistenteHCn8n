@@ -38,9 +38,10 @@ export function useParaclinics(): UseParaclinicsReturn {
   }, []);
 
   const setConfig = useCallback((newConfig: Partial<ParaclinicWebhookConfig>) => {
-    const updated = { ...config, ...newConfig };
+    const { url: _ignoredUrl, ...rest } = newConfig;
+    const updated = { ...config, ...rest };
     setConfigState(updated);
-    paraclinicService.setConfig(newConfig);
+    paraclinicService.setConfig(rest);
   }, [config]);
 
   const appendLog = useCallback((entry: ParaclinicUploadLog) => {
@@ -53,7 +54,7 @@ export function useParaclinics(): UseParaclinicsReturn {
       const ok = await paraclinicService.testConnection();
       setConfigState(paraclinicService.getConfig());
       if (!ok) {
-        setError('No se pudo conectar con el webhook de paraclínicos. Verifica la URL.');
+        setError('No se pudo conectar con el webhook de paraclínicos. Revisa la configuración del backend.');
       }
       return ok;
     } catch (err) {

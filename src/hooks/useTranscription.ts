@@ -29,9 +29,10 @@ export function useTranscription(): UseTranscriptionReturn {
   }, []);
 
   const setConfig = useCallback((newConfig: Partial<TranscriptionConfig>) => {
-    const updatedConfig = { ...config, ...newConfig };
+    const { apiKey: _ignoredApiKey, ...rest } = newConfig;
+    const updatedConfig = { ...config, ...rest };
     setConfigState(updatedConfig);
-    transcriptionService.setConfig(newConfig);
+    transcriptionService.setConfig(rest);
   }, [config]);
 
   const testConnection = useCallback(async (): Promise<boolean> => {
@@ -42,7 +43,7 @@ export function useTranscription(): UseTranscriptionReturn {
       setConfigState(updatedConfig);
 
       if (!result) {
-        setError('No se pudo conectar con AssemblyAI. Verifica tu API key.');
+        setError('No se pudo conectar con AssemblyAI. Verifica la configuración del backend.');
       }
 
       return result;

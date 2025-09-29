@@ -55,9 +55,9 @@ Elementos principales:
 
 El usuario debe completar tres verificaciones antes de acceder al flujo clínico:
 
-1. **AssemblyAI** (`TranscriptionSettings`): ingresar API key y ejecutar «Probar conexión». Se llama a `client.transcripts.list` para validar. Si es exitoso se habilita la transcripción automáticamente.
-2. **Webhook principal n8n** (`WebhookSettings`): ingresar URL `https://` dentro de la allowlist (`VITE_ALLOWED_WEBHOOK_DOMAINS`) y verificar. Se envía POST de prueba `{"test":true}`.
-3. **Webhook de paraclínicos** (`ParaclinicSettings`): URL `https://` + test POST para validar recepción de imágenes.
+1. **AssemblyAI** (`TranscriptionSettings`): la API key se entrega desde el backend y aparece como sólo lectura. El usuario únicamente pulsa «Probar conexión», que ejecuta `client.transcripts.list` para validar. Si es exitoso, la transcripción queda habilitada automáticamente.
+2. **Webhook principal n8n** (`WebhookSettings`): la URL `https://piloto-n8n.2ppzbm.easypanel.host/webhook/a9259909-885a-4670-8c65-85036a79b582` está precargada y no se puede editar. El botón «Probar conexión» envía `{"test": true}` para verificar disponibilidad.
+3. **Webhook de paraclínicos** (`ParaclinicSettings`): el endpoint `https://piloto-n8n.2ppzbm.easypanel.host/webhook/66130711-cac7-4aa0-8b3f-6c3822cb5dde` es fijo; solo se puede ejecutar la prueba de POST para comprobar recepción de imágenes.
 
 Mientras alguna verificación falla el tab activo permanece en «Configuración» y se bloquea la sección clínica.
 
@@ -90,7 +90,7 @@ Mientras alguna verificación falla el tab activo permanece en «Configuración�
 
 ## Transcripción automática con AssemblyAI
 
-- `useTranscription` mantiene la configuración y estados `isTranscribing`, `transcriptionResult`, `error`.
+- `useTranscription` mantiene la configuración y estados `isTranscribing`, `transcriptionResult`, `error`. La API key queda fijada en el servicio y no puede modificarse desde la UI.
 - `transcribeBlob` y `transcribeFile` convierten audio a texto con `language_code: 'es'`, `punctuate: true`, `redact_pii: true` (políticas: `person_name`, `number_sequence`, `drivers_license`, etc., sustitución `hash`).
 - `TranscriptionPanel` permite:
   - Transcribir manualmente la grabación o un audio cargado.
@@ -111,7 +111,7 @@ Mientras alguna verificación falla el tab activo permanece en «Configuración�
 
 ## Paraclínicos y análisis de imágenes
 
-- `useParaclinics` valida que exista webhook configurado y habilitado antes de enviar.
+- `useParaclinics` valida que exista webhook configurado y habilitado antes de enviar; la URL proviene del backend y es inmutable en la UI.
 - `ParaclinicPanel` acepta múltiples archivos (imágenes o PDFs convertidos) y manda `FormData` con `images[]`, `metadata` (alias, ID interno, `encounterId`), `timestamp` y `type: 'paraclinic_document'`.
 - Tras enviar, cualquier JSON retornado se normaliza a:
   - `summary` (extraído de `text`, `content.parts`, `summary`, etc.).
@@ -145,7 +145,7 @@ Mientras alguna verificación falla el tab activo permanece en «Configuración�
 ```
 
 - Si no hay notas, el campo `notes` se omite.
-- `allowDisabledWebhook` permite envíos manuales incluso cuando `enabled` está en `false` (el usuario confirma explícitamente).
+- `allowDisabledWebhook` permite envíos manuales incluso cuando `enabled` está en `false` (el usuario confirma explícitamente). El endpoint se fija automáticamente tras la verificación inicial.
 - Logs reflejan duración formateada y resultado (`success` / `error`).
 
 ### Paraclínicos (`paraclinicService.sendImages`)

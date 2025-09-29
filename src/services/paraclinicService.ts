@@ -7,6 +7,9 @@ export interface ParaclinicWebhookConfig {
   lastTestedAt?: string;
 }
 
+const DEFAULT_PARACLINIC_WEBHOOK =
+  'https://piloto-n8n.2ppzbm.easypanel.host/webhook/66130711-cac7-4aa0-8b3f-6c3822cb5dde';
+
 export interface ParaclinicAnalysisResult {
   id: string;
   summary: string;
@@ -16,13 +19,14 @@ export interface ParaclinicAnalysisResult {
 
 class ParaclinicService {
   private config: ParaclinicWebhookConfig = {
-    url: '',
+    url: DEFAULT_PARACLINIC_WEBHOOK,
     enabled: false,
     isVerified: false,
   };
 
   setConfig(config: Partial<ParaclinicWebhookConfig>) {
-    this.config = { ...this.config, ...config };
+    const { url: _ignoredUrl, ...rest } = config;
+    this.config = { ...this.config, ...rest, url: DEFAULT_PARACLINIC_WEBHOOK };
 
     if (this.config.enabled) {
       try {
@@ -32,19 +36,23 @@ class ParaclinicService {
       }
     }
 
-    localStorage.setItem('paraclinic-webhook-config', JSON.stringify(this.config));
+    localStorage.setItem(
+      'paraclinic-webhook-config',
+      JSON.stringify({ ...this.config, url: DEFAULT_PARACLINIC_WEBHOOK })
+    );
   }
 
   getConfig(): ParaclinicWebhookConfig {
     const stored = localStorage.getItem('paraclinic-webhook-config');
     if (stored) {
       try {
-        const parsed = JSON.parse(stored) as Partial<ParaclinicWebhookConfig>;
+        const { url: _ignoredUrl, ...rest } = JSON.parse(stored) as Partial<ParaclinicWebhookConfig>;
         this.config = {
           ...this.config,
-          ...parsed,
-          isVerified: Boolean(parsed?.isVerified),
-          lastTestedAt: parsed?.lastTestedAt,
+          ...rest,
+          isVerified: Boolean(rest?.isVerified),
+          lastTestedAt: rest?.lastTestedAt,
+          url: DEFAULT_PARACLINIC_WEBHOOK,
         };
         if (this.config.enabled) {
           try {
@@ -57,13 +65,14 @@ class ParaclinicService {
         // noop
       }
     }
+    this.config.url = DEFAULT_PARACLINIC_WEBHOOK;
     return this.config;
   }
 
   clearConfig() {
     localStorage.removeItem('paraclinic-webhook-config');
     this.config = {
-      url: '',
+      url: DEFAULT_PARACLINIC_WEBHOOK,
       enabled: false,
       isVerified: false,
     };

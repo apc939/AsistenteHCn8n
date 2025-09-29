@@ -50,7 +50,7 @@ Prioridades:
 - Área: n8n/API, Operación
 - Criterio: API keys/credenciales fuera del frontend; rotación y scoping mínimo.
 - Validación: revisión de repos/configuración; plan de rotación ≤90 días.
-- Estado actual: **Brecha** — API key de AssemblyAI se almacena en `localStorage`; migrar a backend/SSO vault.
+- Estado actual: **Brecha** — la API key de AssemblyAI está embebida en el bundle (aunque la UI sea de sólo lectura); moverla a backend/secret manager.
 
 7. Registro y auditoría inmutable
 - Área: n8n/API, Operación
@@ -166,6 +166,7 @@ Prioridades:
 - ✅ Cliente valida `https://`, aplica allowlist y bloquea IPs; todos los envíos usan `encounter_id` y datos anonimizados.
 - ✅ Flujos clínicos obligan alias + ID interno, muestran advertencias de privacidad y purgan datos al cerrar sesión/pestaña.
 - ✅ Paraclínicos usan metadata anonimizadas y respuesta normalizada; logs efímeros sin PHI.
+- ✅ Las credenciales se exponen en modo sólo lectura; las pruebas de conexión no permiten editar endpoints desde el cliente.
 - ⚠️ Falta autenticación/SSO, firma de peticiones y gestión de API keys fuera del cliente.
 - ⚠️ Auditoría inmutable, retención y controles operativos se deben implementar en backend/infraestructura.
 
